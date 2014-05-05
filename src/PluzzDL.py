@@ -27,6 +27,7 @@ import urllib2
 import xml.etree.ElementTree
 import xml.sax
 import zlib
+import json
 
 from Configuration import Configuration
 from Historique    import Historique, Video
@@ -46,6 +47,7 @@ class PluzzDL( object ):
 
 	REGEX_ID = "http://info.francetelevisions.fr/\?id-video=([^\"]+)"
 	XML_DESCRIPTION = "http://www.pluzz.fr/appftv/webservices/video/getInfosOeuvre.php?mode=zeri&id-diffusion=_ID_EMISSION_"
+	JSON_DESCRIPTION = "http://webservices.francetelevisions.fr/tools/getInfosOeuvre/v2/?idDiffusion=_ID_EMISSION_&catalogue=Pluzz"
 	URL_SMI = "http://www.pluzz.fr/appftv/webservices/video/getFichierSmi.php?smi=_CHAINE_/_ID_EMISSION_.smi&source=azad"
 	M3U8_LINK = "http://medias2.francetv.fr/catchup-mobile/france-dom-tom/non-token/non-drm/m3u8/_FILE_NAME_.m3u8"
 	REGEX_M3U8 = "/([0-9]{4}/S[0-9]{2}/J[0-9]{1}/[0-9]*-[0-9]{6,8})-"
@@ -75,11 +77,16 @@ class PluzzDL( object ):
 		# Recupere l'id de l'emission
 		idEmission = self.getId( url )
 		# Recupere la page d'infos de l'emission
-		pageInfos = self.navigateur.getFichier( self.XML_DESCRIPTION.replace( "_ID_EMISSION_", idEmission ) )
-		# Parse la page d'infos
-		self.parseInfos( pageInfos )
+		try:
+		    pageInfos = self.navigateur.getFichier( self.XML_DESCRIPTION.replace( "_ID_EMISSION_", idEmission ) )
+		    # Parse la page d'infos
+		    self.parseInfos( pageInfos )
+		except:
+		    logger.debug( "Problème avec le fichier XML, récupération du JSON" )
+		    pageInfos = self.navigateur.getFichier( self.JSON_DESCRIPTION.replace( "_ID_EMISSION_", idEmission ) )
+		    self.parseInfosJSON( pageInfos )
 		# Petit message en cas de DRM
-		if( self.drm == "oui" ):
+		if( self.drm ):
 			logger.warning( "La vidéo posséde un DRM ; elle sera sans doute illisible" )
 		# Verification qu'un lien existe
 		if( self.m3u8URL is None and
@@ -144,6 +151,30 @@ class PluzzDL( object ):
 			logger.debug( "Utilisation de DRM : %s" % ( self.drm ) )
 		except :
 			raise PluzzDLException( "Impossible de parser le fichier XML de l'émission" )
+
+	def parseInfosJSON( self, pageInfos ):
+		"""
+		Parse le fichier de description JSON d'une emission
+		"""
+		try:
+		    data = json.loads( pageInfos )
+		    self.lienRTMP = None
+		    self.lienMMS = None
+		    self.timeStamp = data['diffusion']['timestamp']
+		    self.codeProgramme = data['code_programme']
+		    for v in data['videos']:
+			if v['format'] == 'm3u8-download':
+			    self.m3u8URL = v['url']
+			    self.drm = v['drm']
+			elif v['format'] == 'smil-mp4':
+			    self.manifestURL = v['url']
+		    logger.debug( "URL m3u8 : %s" % ( self.m3u8URL ) )
+		    logger.debug( "URL manifest : %s" % ( self.manifestURL ) )
+		    logger.debug( "Lien RTMP : %s" % ( self.lienRTMP ) )
+		    logger.debug( "Lien MMS : %s" % ( self.lienMMS ) )
+		    logger.debug( "Utilisation de DRM : %s" % ( self.drm ) )
+		except :
+			raise PluzzDLException( "Impossible de parser le fichier JSON de l'émission" )
 
 	def getNomFichier( self, repertoire, codeProgramme, timeStamp, extension ):
 		"""
@@ -269,6 +300,12 @@ class PluzzDLM3U8( object ):
 		self.m3u8 = self.navigateur.getFichier( self.m3u8URL )
 		# Extrait l'URL de tous les fragments
 		self.listeFragments = re.findall( ".+?\.ts", self.m3u8 )
+		if not self.listeFragments:
+		    self.listeFragments = []
+		    self.listeM3U8 = re.findall( ".+?index_2_av\.m3u8", self.m3u8 )
+		    for m3u8 in self.listeM3U8:
+			m3u8data = self.navigateur.getFichier( m3u8 )
+			self.listeFragments.extend( re.findall( ".+?\.ts", m3u8data ) )
 		#
 		# Creation de la video
 		#
