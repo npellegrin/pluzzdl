@@ -286,12 +286,12 @@ class PluzzDLM3U8( object ):
 			if( os.name == "nt" ):
 				commande = "ffmpeg.exe -i %s -vcodec copy -acodec copy %s 1>NUL 2>NUL" % ( self.nomFichier, self.nomFichierFinal )
 			else:
-				commande = "ffmpeg -i %s -vcodec copy -acodec copy %s 1>/dev/null 2>/dev/null" % ( self.nomFichier, self.nomFichierFinal )
+				commande = "avconv -i %s -vcodec copy -acodec copy %s 1>/dev/null 2>/dev/null" % ( self.nomFichier, self.nomFichierFinal )
 			if( os.system( commande ) == 0 ):
 				os.remove( self.nomFichier )
 				logger.info( "Fin !" )
 			else:
-				logger.warning( "Problème lors de la création du MKV avec FFmpeg ; le fichier %s est néanmoins disponible" % ( self.nomFichier ) )
+				logger.warning( "Problème lors de la création du MKV avec FFmpeg ou AvConv ; le fichier %s est néanmoins disponible" % ( self.nomFichier ) )
 		except:
 			raise PluzzDLException( "Impossible de créer la vidéo finale" )
 
